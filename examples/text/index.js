@@ -1,29 +1,25 @@
 import React from "react"
-import { Stream, plan } from "react-streams"
-import { merge, of } from "rxjs"
-import { delay, map, pluck, scan } from "rxjs/operators"
+import { converge, plan, stream } from "react-streams"
+import { pipe } from "rxjs"
+import { delay, map, pluck } from "rxjs/operators"
 
-const text$ = of({ message: "Hello" })
-
-const onChange = plan(
+const getValueThenDelay = pipe(
   pluck("target", "value"),
   delay(250),
-  map(message => ({ message }))
+  map(message => () => ({ message }))
 )
 
-const state$ = merge(text$, onChange).pipe(
-  scan((state = {}, patch) => {
-    return { ...state, ...patch }
-  })
-)
+const onChange = plan(getValueThenDelay)
+
+const TextDemo = stream(converge({ onChange }))
 
 export default () => (
-  <Stream source={state$} {...{ onChange }}>
+  <TextDemo message="Hello">
     {({ message, onChange }) => (
       <div>
         <input id="input" type="text" onChange={onChange} />
         <div id="message">{message}</div>
       </div>
     )}
-  </Stream>
+  </TextDemo>
 )

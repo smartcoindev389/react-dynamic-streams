@@ -1,71 +1,147 @@
 import { Component, ReactNode } from "react"
-import { Subject, merge, observable, Subscription, Observable } from "rxjs"
 import {
+  Observable,
+  Subject,
+  Subscription,
+  concat,
+  merge,
+  observable,
+  of,
+  OperatorFunction,
+  isObservable,
+  pipe,
+  UnaryFunction
+} from "rxjs"
+import {
+  distinctUntilChanged,
+  map,
   scan,
   share,
-  distinctUntilChanged,
   switchMap,
-  map,
-  tap
+  tap,
+  withLatestFrom,
+  ignoreElements
 } from "rxjs/operators"
 
+const patchScan = scan((state = {}, update) => {
+  const patch = update instanceof Function ? update(state) : update
+  return { ...state, ...patch }
+})
+
+const filterObject = (o, fn) =>
+  Object.entries(o)
+    .filter(fn)
+    .reduce(
+      (o, [key, value]) => ({
+        ...o,
+        [key]: value
+      }),
+      {}
+    )
+
+const update = key => map(key => () => ({ key }))
+const spreadMap = (overrides = {}) => map(value => ({ ...value, ...overrides }))
+
+const converge = (plans, ...streams) =>
+  switchMap(({ pipe, ...props }) => {
+    return concat(
+      of(props),
+      merge(...(Object.values(plans) as any[]), ...streams)
+    ).pipe(patchScan, spreadMap(plans))
+  })
+
+const assign = (...streams) => merge(...streams).pipe(patchScan)
+
+/***
+ * Stream
+ */
 class Stream extends Component<
   {
-    source: Observable<any>
+    pipe: OperatorFunction<any, Observable<any>>
     children?: (props: any) => ReactNode
     render?: (props: any) => ReactNode
   },
   any
 > {
-  componentDidMountPlan = plan()
-  componentDidUpdatePlan = plan()
+  updateProps = plan()
 
-  __renderFn = (this.props.children
+  _renderFn = (this.props.children
     ? this.props.children
     : this.props.render
       ? this.props.render
-      : value => value) as Function
+      : (state: any) => {
+          throw Error("Need children or render")
+        }) as Function
 
-  subscription: Subscription = merge(
-    this.componentDidMountPlan,
-    this.componentDidUpdatePlan
-  )
-    .pipe(
+  subscription?: Subscription
+  _isMounted = false
+
+  constructor(props, context, config = {}) {
+    super(props, context)
+    this.setup(props, context, config)
+  }
+
+  setup(props, context, config) {
+    const props$ = concat(of(props), this.updateProps)
+
+    const state$ = props$.pipe(
       distinctUntilChanged(),
-      switchMap(p => {
-        const { source, ...props } = p as { source: Observable<any> }
-
-        return source.pipe(map(state => ({ ...state, ...props })))
-      })
+      props.pipe ? props.pipe : config.pipe ? config.pipe : x => x
     )
-    .subscribe(state => {
-      this.setState(() => state)
+
+    this.subscription = state$.subscribe(state => {
+      if (this._isMounted) {
+        this.setState(() => state)
+      } else {
+        this.state = state
+      }
     })
+  }
 
   componentDidMount() {
-    this.componentDidMountPlan(this.props)
+    this._isMounted = true
   }
 
   render() {
-    return this.state ? this.__renderFn({ ...this.state }) : null
+    return this._renderFn({ ...this.state })
   }
 
   componentDidUpdate() {
-    this.componentDidUpdatePlan(this.props)
+    this.updateProps(this.props)
   }
 
   componentWillUnmount() {
-    this.subscription.unsubscribe()
+    if (this.subscription) this.subscription.unsubscribe()
   }
 }
 
-const converge: any = (...streams) =>
-  merge(...streams).pipe(
-    scan((state = {}, value) => {
-      const patch = value instanceof Function ? value(state) : value
-      return { ...state, ...patch }
+class Subscribe extends Stream {
+  setup(props, context, config) {
+    console.log({ props, context, config })
+    const source = props.source
+      ? props.source
+      : config.source
+        ? config.source
+        : of(Error("No source provided"))
+    const state$ = source.pipe(
+      distinctUntilChanged(),
+      props.pipe ? props.pipe : config.pipe ? config.pipe : x => x
+    )
+
+    this.subscription = state$.subscribe(state => {
+      if (this._isMounted) {
+        this.setState(() => state)
+      } else {
+        this.state = state
+      }
     })
-  )
+  }
+}
+
+const stream = pipe => (props, context) => new Stream(props, context, { pipe })
+const subscribe = (source, pipe) => (props, context) =>
+  new Subscribe(props, context, { source, pipe })
+
 function plan(...operators) {
   const subject = new Subject()
   const source = subject.pipe(...operators, share())
@@ -75,4 +151,19 @@ function plan(...operators) {
   return next
 }
 
-export { plan, Stream, converge }
+const fromPlan = (otherPlan, selector): UnaryFunction<any, any> =>
+  pipe(withLatestFrom(otherPlan, (_, value) => value), map(selector))
+const toPlan = (otherPlan, selector = x => x): UnaryFunction<any, any> =>
+  pipe(map(selector), tap(otherPlan), ignoreElements())
+
+export {
+  plan,
+  fromPlan,
+  toPlan,
+  Stream,
+  Subscribe,
+  stream,
+  subscribe,
+  converge,
+  assign
+}

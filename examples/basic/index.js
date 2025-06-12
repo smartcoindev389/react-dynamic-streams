@@ -1,13 +1,15 @@
 import React from "react"
-import { Stream } from "react-streams"
+import { stream } from "react-streams"
+import { pipe } from "rxjs"
 import { delay, startWith } from "rxjs/operators"
-import { of, pipe } from "rxjs"
 
-const source$ = of({ message: "Hello" }).pipe(
-  delay(1000),
-  startWith({ message: "Wait..." })
-)
+const startWithAndDelay = (message, time) =>
+  pipe(delay(time), startWith({ message }))
+
+const MessageStream = stream(startWithAndDelay("Wait...", 500))
 
 export default () => (
-  <Stream source={source$}>{({ message }) => <div>{message}</div>}</Stream>
+  <MessageStream message="Hello">
+    {({ message }) => <div>{message}</div>}
+  </MessageStream>
 )
