@@ -1,24 +1,37 @@
 import { Component, ReactNode } from "react"
-import { Subject, merge, observable, Subscription, Observable } from "rxjs"
 import {
+  Observable,
+  Subject,
+  Subscription,
+  concat,
+  merge,
+  observable,
+  of
+} from "rxjs"
+import {
+  distinctUntilChanged,
+  map,
   scan,
   share,
-  distinctUntilChanged,
-  switchMap,
-  map,
-  tap
+  switchMap
 } from "rxjs/operators"
+
+const defaultReceiveProps = switchMap(p => {
+  const { source, ...props } = p as { source: Observable<any> }
+
+  return source.pipe(map(state => ({ ...props, ...state })))
+})
 
 class Stream extends Component<
   {
     source: Observable<any>
     children?: (props: any) => ReactNode
     render?: (props: any) => ReactNode
+    pipe
   },
   any
 > {
-  componentDidMountPlan = plan()
-  componentDidUpdatePlan = plan()
+  updateProps = plan()
 
   __renderFn = (this.props.children
     ? this.props.children
@@ -26,32 +39,38 @@ class Stream extends Component<
       ? this.props.render
       : value => value) as Function
 
-  subscription: Subscription = merge(
-    this.componentDidMountPlan,
-    this.componentDidUpdatePlan
-  )
-    .pipe(
-      distinctUntilChanged(),
-      switchMap(p => {
-        const { source, ...props } = p as { source: Observable<any> }
+  subscription: Subscription
+  _isMounted = false
 
-        return source.pipe(map(state => ({ ...state, ...props })))
-      })
+  constructor(props) {
+    super(props)
+
+    const props$ = concat(of(props), this.updateProps)
+
+    const state$ = props$.pipe(
+      distinctUntilChanged(),
+      props.receiveProps ? props.receiveProps : defaultReceiveProps
     )
-    .subscribe(state => {
-      this.setState(() => state)
+
+    this.subscription = state$.subscribe(state => {
+      if (this._isMounted) {
+        this.setState(() => state)
+      } else {
+        this.state = state
+      }
     })
+  }
 
   componentDidMount() {
-    this.componentDidMountPlan(this.props)
+    this._isMounted = true
   }
 
   render() {
-    return this.state ? this.__renderFn({ ...this.state }) : null
+    return this.__renderFn({ ...this.state })
   }
 
   componentDidUpdate() {
-    this.componentDidUpdatePlan(this.props)
+    this.updateProps(this.props)
   }
 
   componentWillUnmount() {
@@ -59,13 +78,12 @@ class Stream extends Component<
   }
 }
 
-const converge: any = (...streams) =>
-  merge(...streams).pipe(
-    scan((state = {}, value) => {
-      const patch = value instanceof Function ? value(state) : value
-      return { ...state, ...patch }
-    })
-  )
+const patchScan = scan((state = {}, applyPatch) => {
+  const patch = applyPatch instanceof Function ? applyPatch(state) : applyPatch
+  return { ...state, ...patch }
+})
+
+const converge: any = (...streams) => merge(...streams).pipe(patchScan)
 function plan(...operators) {
   const subject = new Subject()
   const source = subject.pipe(...operators, share())
