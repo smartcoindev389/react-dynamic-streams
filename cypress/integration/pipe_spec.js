@@ -1,7 +1,6 @@
-describe("Hello, world!", () => {
+describe("Basic", () => {
   it("should display 'Wait...' then 'Hello'", () => {
-    cy.clock()
-    cy.visit("http://localhost:4321/hello")
+    cy.visit("http://localhost:4321/pipe")
     cy.contains("Hello, world!")
   })
 })
