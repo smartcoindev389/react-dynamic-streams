@@ -1,64 +1,85 @@
 import React from "react"
-import { Stream, converge, plan } from "react-streams"
-import { from, pipe } from "rxjs"
-import { ajax } from "rxjs/ajax"
 import {
-  concatMap,
-  map,
-  mapTo,
-  pluck,
-  startWith,
-  tap,
-  withLatestFrom
-} from "rxjs/operators"
+  plan,
+  scanPlans,
+  scanStreams,
+  stream,
+  streamProps
+} from "react-streams"
+import { from, of, pipe } from "rxjs"
+import { ajax } from "rxjs/ajax"
+import { map, mapTo, switchMap, tap, withLatestFrom } from "rxjs/operators"
+
+const url = process.env.DEV
+  ? "/api/todos"
+  : // Get your own, free todos API 🙌 https://glitch.com/edit/#!/import/github/johnlindquist/todos-api
+    "https://dandelion-bonsai.glitch.me/todos"
 
 const HEADERS = { "Content-Type": "application/json" }
 
-const renderAddTodoForm = ({ current, onChange, onSubmit }) => (
-  <form
-    style={{ width: "100%", height: "2rem", display: "flex" }}
-    onSubmit={onSubmit}
-  >
-    <input
-      aria-label="Add Todo"
-      style={{ flex: "1" }}
-      type="text"
-      value={current}
-      onChange={onChange}
-      autoFocus
-      placeholder="What needs to be done?"
-    />
-    <input type="submit" value="Add Todo" />
-  </form>
+const onChange = plan(map(event => ({ current: event.target.value })))
+
+const addTodo = plan(
+  tap(event => event.preventDefault()),
+  withLatestFrom(onChange, (_, { current }) => current),
+  map(text => ({ url, todos }) =>
+    ajax.post(url, { text, done: false }, HEADERS).pipe(
+      map(({ response: todo }) => ({
+        url,
+        todos: [...todos, todo]
+      }))
+    )
+  )
 )
 
-const AddTodoForm = ({ onAddTodo }) => {
-  const onChange = plan(pluck("target", "value"))
-  const current$ = from(onChange).pipe(
-    startWith(""),
-    map(current => ({ current }))
+const TodoForm = stream(
+  of({ current: "", addTodo }).pipe(
+    scanPlans({ onChange }),
+    scanStreams(from(addTodo).pipe(mapTo({ current: "" })))
   )
+)
 
-  const onSubmit = plan(
-    tap(e => e.preventDefault()),
-    withLatestFrom(onChange, (_, text) => text)
+const toggleTodo = plan(
+  map(todo => ({ url, todos }) =>
+    ajax
+      .patch(
+        `${url}/${todo.id}`,
+        {
+          ...todo,
+          done: todo.done ? false : true
+        },
+        HEADERS
+      )
+      .pipe(
+        map(({ response: todo }) => ({
+          url,
+          todos: todos.map(_todo => (_todo.id === todo.id ? todo : _todo))
+        }))
+      )
   )
-  from(onSubmit).subscribe(onAddTodo)
+)
 
-  const clearAfterAdd = from(onAddTodo).pipe(mapTo({ current: "" }))
-
-  const state$ = converge(current$, clearAfterAdd)
-
-  return (
-    <Stream
-      source={state$}
-      {...{ onChange, onSubmit }}
-      render={renderAddTodoForm}
-    />
+const deleteTodo = plan(
+  map(todo => ({ url, todos }) =>
+    ajax
+      .delete(
+        `${url}/${todo.id}`,
+        {
+          ...todo,
+          done: todo.done ? false : true
+        },
+        HEADERS
+      )
+      .pipe(
+        mapTo({
+          url,
+          todos: todos.filter(_todo => _todo.id !== todo.id)
+        })
+      )
   )
-}
+)
 
-const Todo = ({ todo, onToggleDone, onDeleteTodo }) => (
+const Todo = ({ todo, toggleTodo, deleteTodo }) => (
   <li
     style={{
       display: "flex"
@@ -72,88 +93,51 @@ const Todo = ({ todo, onToggleDone, onDeleteTodo }) => (
     >
       {todo.text}
     </span>
-    <button
-      aria-label={`Toggle ${todo.text}`}
-      onClick={e => onToggleDone(todo)}
-    >
+    <button aria-label={`Toggle ${todo.text}`} onClick={e => toggleTodo(todo)}>
       ✓
     </button>
-    <button
-      aria-label={`Delete ${todo.text}`}
-      onClick={e => onDeleteTodo(todo)}
-    >
+    <button aria-label={`Delete ${todo.text}`} onClick={e => deleteTodo(todo)}>
       X
     </button>
   </li>
 )
 
-// Get your own, free todos API 🙌 https://glitch.com/edit/#!/import/github/johnlindquist/todos-api
-const url = process.env.DEV
-  ? "/api/todos"
-  : "https://dandelion-bonsai.glitch.me/todos"
-
-const Todos = ({ url, ...props }) => {
-  const todos$ = ajax(url).pipe(pluck("response"), map(todos => ({ todos })))
-
-  const addTodoAjax = pipe(
-    concatMap(text => ajax.post(`${url}`, { text, done: false }, HEADERS)),
-    pluck("response")
-  )
-
-  const addTodo = map(todo => ({ todos }) => ({ todos: [...todos, todo] }))
-
-  const toggleDoneAjax = pipe(
-    concatMap(todo =>
-      ajax.patch(
-        `${url}/${todo.id}`,
-        {
-          ...todo,
-          done: todo.done ? false : true
-        },
-        HEADERS
-      )
+const Todos = streamProps(
+  pipe(
+    switchMap(({ url }) =>
+      ajax(url).pipe(map(({ response: todos }) => ({ url, todos })))
     ),
-    pluck("response")
+    scanPlans({ toggleTodo, deleteTodo, addTodo })
   )
-
-  const toggleDone = map(todo => state => ({
-    todos: state.todos.map(t => (t.id === todo.id ? todo : t))
-  }))
-
-  const deleteTodoAjax = pipe(
-    concatMap(todo => ajax.delete(`${url}/${todo.id}`).pipe(mapTo(todo)))
-  )
-  const deleteTodo = map(todo => ({ todos }) => ({
-    todos: todos.filter(t => t.id !== todo.id)
-  }))
-
-  const onAddTodo = plan(addTodoAjax, addTodo)
-  const onToggleDone = plan(toggleDoneAjax, toggleDone)
-  const onDeleteTodo = plan(deleteTodoAjax, deleteTodo)
-
-  const state$ = converge(todos$, onAddTodo, onToggleDone, onDeleteTodo)
-
-  return (
-    <Stream
-      source={state$}
-      {...{ ...props, onAddTodo, onToggleDone, onDeleteTodo }}
-    />
-  )
-}
+)
 
 export default () => (
-  <Todos url={url}>
-    {({ todos, onAddTodo, onToggleDone, onDeleteTodo }) => {
-      return (
-        <div style={{ padding: "2rem", width: "300px" }}>
-          <AddTodoForm onAddTodo={onAddTodo} />
-          <ul style={{ padding: "0", listStyleType: "none" }}>
-            {todos.map(todo => (
-              <Todo key={todo.id} {...{ todo, onToggleDone, onDeleteTodo }} />
-            ))}
-          </ul>
-        </div>
-      )
-    }}
-  </Todos>
+  <div style={{ padding: "2rem", width: "300px" }}>
+    <TodoForm>
+      {({ current, onChange, addTodo }) => (
+        <form
+          onSubmit={addTodo}
+          style={{ width: "100%", height: "2rem", display: "flex" }}
+        >
+          <input
+            aria-label="Add Todo"
+            style={{ flex: "1" }}
+            type="text"
+            value={current}
+            onChange={onChange}
+            autoFocus
+            placeholder="What needs to be done?"
+          />
+          <input type="submit" value="Add Todo" />
+        </form>
+      )}
+    </TodoForm>
+    <Todos url={url}>
+      {({ todos, toggleTodo, deleteTodo }) =>
+        todos.map(todo => (
+          <Todo key={todo.id} {...{ todo, toggleTodo, deleteTodo }} />
+        ))
+      }
+    </Todos>
+  </div>
 )

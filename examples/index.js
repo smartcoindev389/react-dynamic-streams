@@ -1,19 +1,34 @@
 import React, { Fragment } from "react"
 import { render } from "react-dom"
 import Loadable from "react-loadable"
-import { BrowserRouter as Router, Link, Route, Switch } from "react-router-dom"
+import {
+  BrowserRouter as Router,
+  Link,
+  Route,
+  Switch,
+  Redirect
+} from "react-router-dom"
 import "./index.css"
 
 const examples = [
-  "hello",
-  "basic",
+  "generic",
+  "stream",
+  "pipe",
+  "streamProps",
   "ajax",
-  "text",
+  "nested",
+  "plans",
+  "scanPlans",
   "counter",
-  "converge",
   "todos",
+  "drag",
   "context",
-  "combineState"
+  "combineSources",
+  "stepper",
+  "render",
+  "shopping-cart",
+  "ping",
+  "sequence"
 ]
 
 const ExampleRoute = props => (
@@ -39,11 +54,14 @@ render(
           </Link>
         ))}
       </nav>
-      <Switch>
-        {examples.map(example => (
-          <ExampleRoute key={example} path={`/${example}`} />
-        ))}
-      </Switch>
+      <div style={{ padding: "2rem" }}>
+        <Switch>
+          <Redirect exact from="/" to="/generic" />
+          {examples.map(example => (
+            <ExampleRoute key={example} path={`/${example}`} />
+          ))}
+        </Switch>
+      </div>
     </Fragment>
   </Router>,
   document.querySelector("#root")

@@ -1,9 +1,13 @@
 {
   "name": "react-streams",
-  "version": "11.0.0",
+  "version": "13.6.5",
   "description": "Simple Streams for React",
-  "main": "dist/index.js",
+  "main": "dist/react-streams.js",
+  "module": "dist/react-streams.esm.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/johnlindquist/react-streams.git"
@@ -13,18 +17,21 @@
   },
   "homepage": "https://github.com/johnlindquist/react-streams#readme",
   "scripts": {
-    "build": "tsc",
+    "build": "rollup -c rollup.config.js",
+    "prepublish": "run-p build",
     "dev": "tsc -w",
     "test": "jest",
     "examples": "run-p examples:*",
     "examples:client": "cd examples && poi --port 4321",
-    "examples:server": "cd examples && json-server --port 4322 db.js",
-    "cypress:run": "cypress run --config videoRecording=false",
+    "examples:server": "cd cypress/fixtures && json-server --port 4322 db.js",
+    "cypress:run": "cypress run",
+    "cypress:run:video": "cypress run --config video=true --record",
     "cypress:open": "cypress open",
     "e2e": "concurrently -k --success first 'npm run examples' 'npm run cypress:run'",
+    "e2e:video": "concurrently -k --success first 'npm run examples' 'npm run cypress:run:video'",
     "e2e:open": "run-p examples cypress:open",
     "docs": "poi --config docs/poi.config.js",
-    "prepublish": "run-p e2e"
+    "disable-prepublish-stop-running-on-install-before-build": "run-p e2e"
   },
   "keywords": [
     "react",
@@ -43,7 +50,7 @@
     "@types/react": "^16.3.2",
     "babel-preset-stage-0": "^6.24.1",
     "concurrently": "^3.5.1",
-    "cypress": "^2.1.0",
+    "cypress": "^3.0.1",
     "jest": "^22.4.3",
     "json-server": "^0.12.2",
     "npm-run-all": "^4.1.2",
@@ -53,7 +60,11 @@
     "react-loadable": "^5.4.0",
     "react-router": "^4.2.0",
     "react-router-dom": "^4.2.2",
-    "rxjs": "^6.1.0",
+    "rollup": "^0.60.1",
+    "rollup-plugin-terser": "^1.0.1",
+    "rollup-plugin-typescript2": "^0.14.0",
+    "rollup-plugin-uglify": "^4.0.0",
+    "rxjs": "^6.2.0",
     "ts-jest": "^22.4.4",
     "ts-snippet": "^3.1.1",
     "typescript": "^2.8.1"
